@@ -1,0 +1,27 @@
+name: Private contract access
+on:
+  workflow_dispatch:
+  push:
+    paths: [contracts.lock.json, scripts/fetch_contract.py, .github/workflows/contract-access.yml]
+permissions:
+  contents: read
+jobs:
+  published-wheel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Read private immutable contract artifact across repositories
+        env:
+          CONTRACTS_DEPLOY_KEY: ${{ secrets.CONTRACTS_DEPLOY_KEY }}
+        run: |
+          test -n "$CONTRACTS_DEPLOY_KEY" || { echo 'Configure read-only CONTRACTS_DEPLOY_KEY for inference-service'; exit 1; }
+          install -m 700 -d "$RUNNER_TEMP/contract-key"
+          printf '%s\n' "$CONTRACTS_DEPLOY_KEY" > "$RUNNER_TEMP/contract-key/key"
+          chmod 600 "$RUNNER_TEMP/contract-key/key"
+          python scripts/fetch_contract.py --ssh-key "$RUNNER_TEMP/contract-key/key"
+          rm -rf "$RUNNER_TEMP/contract-key"
+          python -m pip install .artifacts/local_llm_contract-1.0.0-py3-none-any.whl
+          python -c 'from llm_contract.generated import LlmService; from importlib.metadata import version; assert version("local-llm-contract")=="1.0.0"'
