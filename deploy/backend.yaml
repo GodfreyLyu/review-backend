@@ -1,0 +1,106 @@
+# Standalone application template only. Provision PostgreSQL/Kafka independently.
+# Substitute namespace, immutable image digest, credentials and TLS paths before use.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: review-backend
+  namespace: review-backend
+data:
+  ENVIRONMENT: production
+  COOKIE_SECURE: "true"
+  ALLOWED_ORIGIN: https://review.example.invalid
+  API_HOST: 0.0.0.0
+  KAFKA_BOOTSTRAP_SERVERS: kafka.example.invalid:9093
+  KAFKA_SECURITY_PROTOCOL: SASL_SSL
+  KAFKA_SSL_CA_LOCATION: /run/tls/kafka-ca.pem
+  THRIFT_HOST: 127.0.0.1
+  THRIFT_PORT: "9091"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: review-api
+  namespace: review-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: review-api}
+  template:
+    metadata:
+      labels: {app: review-api}
+    spec:
+      terminationGracePeriodSeconds: 45
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001}
+      containers:
+        - name: api
+          image: ghcr.io/godfreylyu/review-backend:replace-with-digest
+          command: [review-api]
+          envFrom:
+            - configMapRef: {name: review-backend}
+            - secretRef: {name: review-backend-secrets}
+          ports: [{containerPort: 8080}]
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: "1", memory: 512Mi}
+          readinessProbe: {httpGet: {path: /health/ready, port: 8080}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /health/live, port: 8080}, periodSeconds: 10}
+          volumeMounts: [{name: tls, mountPath: /run/tls, readOnly: true}]
+      volumes: [{name: tls, secret: {secretName: review-backend-tls}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: review-api, namespace: review-backend}
+spec:
+  selector: {app: review-api}
+  ports: [{port: 8080, targetPort: 8080}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: outbox-relay, namespace: review-backend}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: outbox-relay}}
+  template:
+    metadata: {labels: {app: outbox-relay}}
+    spec:
+      terminationGracePeriodSeconds: 45
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001}
+      containers:
+        - name: relay
+          image: ghcr.io/godfreylyu/review-backend:replace-with-digest
+          command: [outbox-relay]
+          envFrom: [{configMapRef: {name: review-backend}}, {secretRef: {name: review-backend-secrets}}]
+          resources: {requests: {cpu: 100m, memory: 128Mi}, limits: {cpu: "1", memory: 512Mi}}
+          livenessProbe:
+            exec: {command: [python, -m, app.probes, /tmp/outbox-relay.heartbeat]}
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          volumeMounts: [{name: tls, mountPath: /run/tls, readOnly: true}]
+      volumes: [{name: tls, secret: {secretName: review-backend-tls}}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: review-worker, namespace: review-backend}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: review-worker}}
+  template:
+    metadata: {labels: {app: review-worker}}
+    spec:
+      terminationGracePeriodSeconds: 90
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001}
+      containers:
+        - name: worker
+          image: ghcr.io/godfreylyu/review-backend:replace-with-digest
+          command: [review-worker]
+          envFrom: [{configMapRef: {name: review-backend}}, {secretRef: {name: review-backend-secrets}}]
+          resources: {requests: {cpu: 100m, memory: 128Mi}, limits: {cpu: "1", memory: 512Mi}}
+          livenessProbe:
+            exec: {command: [python, -m, app.probes, /tmp/review-worker.heartbeat]}
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          volumeMounts: [{name: tls, mountPath: /run/tls, readOnly: true}]
+      volumes: [{name: tls, secret: {secretName: review-backend-tls}}]
+# Add a Thrift mTLS client sidecar in worker pods; expose only its loopback listener.
+# Run review-migrate as a separate, controlled pre-release Job with these secrets.
+# Secrets: DATABASE_URL (sslmode=verify-full), SIGNING_SECRET, KAFKA_SASL_*.

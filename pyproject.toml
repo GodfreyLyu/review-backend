@@ -23,6 +23,7 @@ dependencies = [
 review-api = "app.entrypoints:api"
 outbox-relay = "app.relay.main:main"
 review-worker = "app.worker.main:main"
+review-recover = "app.recovery:main"
 review-migrate = "app.persistence.migrate:main"
 
 [project.optional-dependencies]
@@ -42,3 +43,7 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.ruff.lint.isort]
 # Keep test-helper imports classified consistently from the repo root and backend/.
 known-first-party = ["app", "backend"]
+
+[tool.setuptools.package-data]
+"app.persistence" = ["migrations/*.sql"]
+"app.messaging" = ["contracts/*.json"]

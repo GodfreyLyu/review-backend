@@ -1,0 +1,34 @@
+name: Release review backend
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'New tag matching backend package version (backend-vVERSION)'
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+  wheel:
+    needs: checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: backend-wheel
+          path: dist
+      - name: Publish independently versioned backend wheel
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: python scripts/publish.py --wheel dist/review_backend-$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")-py3-none-any.whl --tag "$RELEASE_TAG" --target "$GITHUB_SHA"

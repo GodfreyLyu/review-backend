@@ -1,0 +1,111 @@
+name: review-backend-dev
+services:
+  postgres:
+    image: postgres:17.6
+    environment:
+      POSTGRES_DB: review_backend
+      POSTGRES_USER: review
+      POSTGRES_PASSWORD: local-test-password
+    ports: ["127.0.0.1:55432:5432"]
+    volumes: ["postgres-data:/var/lib/postgresql/data", "./deploy/postgres:/docker-entrypoint-initdb.d:ro"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U review -d review_backend"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    mem_limit: 512m
+    stop_grace_period: 30s
+  kafka:
+    image: apache/kafka:4.1.1
+    ports: ["127.0.0.1:59092:59092"]
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:59092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://127.0.0.1:59092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_HEAP_OPTS: -Xmx384m -Xms128m
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    volumes: ["kafka-data:/var/lib/kafka/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+    mem_limit: 1g
+    stop_grace_period: 30s
+  migrate:
+    profiles: [app]
+    build: .
+    image: review-backend:local
+    env_file: .env
+    environment: &app-env
+      DATABASE_URL: postgresql://review:local-test-password@postgres:5432/review_backend
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      THRIFT_HOST: host.docker.internal
+      API_HOST: 0.0.0.0
+    command: [review-migrate]
+    depends_on:
+      postgres: {condition: service_healthy}
+    mem_limit: 256m
+  api:
+    profiles: [app]
+    image: review-backend:local
+    env_file: .env
+    environment: *app-env
+    command: [review-api]
+    ports: ["127.0.0.1:8080:8080"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/ready', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    mem_limit: 512m
+    stop_grace_period: 30s
+  relay:
+    profiles: [app]
+    image: review-backend:local
+    env_file: .env
+    environment: *app-env
+    command: [outbox-relay]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      kafka: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.probes", "/tmp/outbox-relay.heartbeat"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    mem_limit: 512m
+    stop_grace_period: 45s
+  worker:
+    profiles: [app]
+    image: review-backend:local
+    env_file: .env
+    environment: *app-env
+    command: [review-worker]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      kafka: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.probes", "/tmp/review-worker.heartbeat"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    mem_limit: 512m
+    stop_grace_period: 90s
+
+volumes:
+  postgres-data:
+  kafka-data:

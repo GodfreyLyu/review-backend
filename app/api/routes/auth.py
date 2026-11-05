@@ -15,12 +15,14 @@ from app.api.auth import (
 from app.api.dependencies import Accounts, AppSettings, RequestLimiter, ReviewStore
 from app.api.schemas import API_ERROR_RESPONSES, Credentials, SessionResponse
 from app.config import Settings
-from app.rate_limit import RateLimiter
+from app.persistence.storage import DatabaseRateLimiter
 
 router = APIRouter(prefix="/api/v1/auth", responses=API_ERROR_RESPONSES)
 
 
-def auth_limit(request: Request, login_id: str, config: Settings, limiter: RateLimiter) -> None:
+def auth_limit(
+    request: Request, login_id: str, config: Settings, limiter: DatabaseRateLimiter
+) -> None:
     # Only the direct peer is trusted; caller-supplied forwarding headers grant no new quota.
     client = request.client.host if request.client else "unknown"
     limiter.check("auth-ip:" + client, config.login_rate_limit)

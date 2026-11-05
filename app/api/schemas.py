@@ -45,6 +45,8 @@ class ReviewAccepted(BaseModel):
 
 
 class ReviewDetail(ReviewAccepted):
+    execution_state: str
+    attempt: int
     language: str
     source_code: str
     review_result: str | None

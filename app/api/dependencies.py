@@ -1,17 +1,14 @@
-"""Typed HTTP adapters to per-application dependencies assembled by create_app."""
+"""HTTP dependencies for independently composed API instances."""
 
 from typing import Annotated
 
 from fastapi import Depends, Request
 
+from app.application.admission import ReviewService
 from app.config import Settings
-from app.coordinator import Coordinator
-from app.inference.client import ReviewClient
 from app.monitoring import Metrics
-from app.persistence.storage import Store
+from app.persistence.storage import DatabaseRateLimiter, Store
 from app.persistence.users import UserStore
-from app.rate_limit import RateLimiter
-from app.review_service import ReviewService
 
 
 def get_settings(request: Request) -> Settings:
@@ -26,16 +23,8 @@ def get_users(request: Request) -> UserStore:
     return request.app.state.users
 
 
-def get_review_client(request: Request) -> ReviewClient:
-    return request.app.state.review_client
-
-
-def get_limiter(request: Request) -> RateLimiter:
+def get_limiter(request: Request) -> DatabaseRateLimiter:
     return request.app.state.limiter
-
-
-def get_coordinator(request: Request) -> Coordinator:
-    return request.app.state.coordinator
 
 
 def get_review_service(request: Request) -> ReviewService:
@@ -49,9 +38,6 @@ def get_metrics(request: Request) -> Metrics:
 AppSettings = Annotated[Settings, Depends(get_settings)]
 ReviewStore = Annotated[Store, Depends(get_store)]
 Accounts = Annotated[UserStore, Depends(get_users)]
-RequestLimiter = Annotated[RateLimiter, Depends(get_limiter)]
-ReviewCoordinator = Annotated[Coordinator, Depends(get_coordinator)]
+RequestLimiter = Annotated[DatabaseRateLimiter, Depends(get_limiter)]
 Reviews = Annotated[ReviewService, Depends(get_review_service)]
-
-InferenceClient = Annotated[ReviewClient, Depends(get_review_client)]
 Monitoring = Annotated[Metrics, Depends(get_metrics)]

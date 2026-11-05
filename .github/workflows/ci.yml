@@ -1,0 +1,46 @@
+name: Independent backend checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Set up packaging tool
+        run: python -m pip install uv==0.12.19
+      - name: Install hash-locked dependencies and private published wheel
+        env:
+          CONTRACTS_DEPLOY_KEY: ${{ secrets.CONTRACTS_DEPLOY_KEY }}
+        run: |
+          test -n "$CONTRACTS_DEPLOY_KEY" || { echo 'Configure read-only CONTRACTS_DEPLOY_KEY for inference-service'; exit 1; }
+          printf '%s\n' "$CONTRACTS_DEPLOY_KEY" > "$RUNNER_TEMP/contracts-key"
+          chmod 600 "$RUNNER_TEMP/contracts-key"
+          python scripts/bootstrap.py --dev --ssh-key "$RUNNER_TEMP/contracts-key"
+          rm -f "$RUNNER_TEMP/contracts-key"
+      - name: Unit and build checks
+        run: .venv/bin/python scripts/check.py
+      - name: Start dedicated PostgreSQL and real Kafka
+        run: docker compose up -d --wait
+      - name: Functional checks - own processes and contract-only Thrift double
+        env:
+          BACKEND_TEST_COMPOSE_FAILURES: '1'
+        run: .venv/bin/python scripts/check.py --functional
+      - name: Independent image build
+        run: docker build -t review-backend:ci .
+      - name: Stop isolated services
+        if: always()
+        run: docker compose down
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-wheel
+          path: dist/*.whl

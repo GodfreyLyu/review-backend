@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 
 from app.api.auth import Session
 from app.api.dependencies import Reviews, ReviewStore
@@ -19,12 +19,15 @@ router = APIRouter(prefix="/api/v1/reviews", responses=API_ERROR_RESPONSES)
 
 
 @router.post("", status_code=202, response_model=ReviewAccepted)
-def submit(payload: ReviewInput, session: Session, service: Reviews) -> ReviewAccepted:
+def submit(
+    payload: ReviewInput, request: Request, session: Session, service: Reviews
+) -> ReviewAccepted:
     review = service.submit(
         session["user_id"],
         payload.source_code,
         payload.language,
         str(payload.client_request_id) if payload.client_request_id else None,
+        trace_id=request.state.request_id,
     )
     return ReviewAccepted.model_validate(review)
 

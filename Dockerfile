@@ -1,23 +1,13 @@
-FROM python:3.12-slim-bookworm AS build
-ENV PIP_DISABLE_PIP_VERSION_CHECK=1
-WORKDIR /build
-COPY backend/requirements.lock ./
-RUN --mount=type=cache,target=/root/.cache/pip \
-    python -m venv /opt/venv && /opt/venv/bin/pip install -r requirements.lock
-COPY contracts /contracts
-RUN /opt/venv/bin/pip install --no-deps /contracts
-COPY backend/pyproject.toml ./
-COPY backend/app ./app
-RUN /opt/venv/bin/pip install --no-deps --no-cache-dir .
-
-FROM python:3.12-slim-bookworm
-ENV PATH=/opt/venv/bin:$PATH PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
-    HOME=/tmp
-RUN groupadd --gid 10001 app && useradd --uid 10001 --gid app --no-create-home \
-      --shell /usr/sbin/nologin app \
-    && mkdir -p /data && chown 10001:10001 /data
-COPY --from=build /opt/venv /opt/venv
-WORKDIR /service
-USER 10001:10001
-EXPOSE 8000
-CMD ["uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--no-access-log", "--no-proxy-headers", "--timeout-graceful-shutdown", "25"]
+FROM python:3.12.12-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /app
+COPY requirements.lock contracts.lock.json ./
+COPY .artifacts/local_llm_contract-1.0.0-py3-none-any.whl /tmp/contracts/
+RUN python -m pip install --no-cache-dir --require-hashes -r requirements.lock && python -c "import hashlib,json,pathlib; p=pathlib.Path('/tmp/contracts/local_llm_contract-1.0.0-py3-none-any.whl'); assert hashlib.sha256(p.read_bytes()).hexdigest()==json.load(open('contracts.lock.json'))['sha256']" && python -m pip install --no-deps /tmp/contracts/*.whl
+COPY pyproject.toml ./
+COPY app ./app
+RUN python -m pip install --no-deps . && useradd --uid 10001 --create-home review
+USER 10001
+EXPOSE 8080
+STOPSIGNAL SIGTERM
+CMD ["review-api"]

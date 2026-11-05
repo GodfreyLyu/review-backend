@@ -1,9 +1,8 @@
 """Consistent HTTP errors without exposing input values or exception details."""
 
 import logging
-import sqlite3
 
-from botocore.exceptions import BotoCoreError, ClientError
+import psycopg
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -69,9 +68,7 @@ def register_error_handlers(app):
     for error_type, handler in (
         (AppError, application_error),
         (RequestValidationError, validation_error),
-        (sqlite3.Error, storage_error),
-        (BotoCoreError, users_error),
-        (ClientError, users_error),
+        (psycopg.Error, storage_error),
         (Exception, unexpected_error),
     ):
         app.add_exception_handler(error_type, handler)
