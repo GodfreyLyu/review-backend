@@ -428,6 +428,7 @@ def test_real_kafka_and_postgres_temporary_outages_recover(stack):
         pytest.skip("Set BACKEND_TEST_COMPOSE_FAILURES=1 for isolated Compose stop/start faults")
     client, store, handler, processes, topic, brokers = stack
     review_id, _ = submit(client)
+    handler.delay = 20
     subprocess.run(
         ["docker", "compose", "stop", "kafka"], cwd=ROOT, check=True, capture_output=True
     )
