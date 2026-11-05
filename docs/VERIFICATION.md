@@ -22,3 +22,11 @@ No real inference/model/GPU was used in backend tests. Kubernetes templates, mTL
 The worker's configured drain grace is not an absolute process-exit limit: bounded RPC reconciliation may extend cleanup. Kubernetes allows a longer termination window; a forced kill relies on saved leases/remote intent. API metrics intentionally describe only API/DB observations, with worker/inference health separated.
 
 Two upstream test-client deprecation warnings occur in the pinned Starlette/httpx combination; no test failure resulted. Tests never point at the original project or Minikube/Argo CD environment. Shared IDEA run configurations and separate project interpreters are delivered as files; opening/selecting the projects remains a manual GUI action.
+
+## Hosted CI and container application smoke
+
+Independent [backend CI run 41950448661](https://github.com/GodfreyLyu/review-backend/actions/runs/41950448661) passed on commit `1c3e85a`: private cross-repository artifact read/install, **64 unit + 23 real-infrastructure functional tests**, wheel and independent Docker image build. No inference checkout/build or GPU was part of that workflow. Hosted inference checks are owned by that repository and do not gate this workflow.
+
+Clean-clone Docker build also passed (`review-backend:independent-validation-20261105`, manifest `sha256:bc60955409b6ae22ff8422e57a852ce331d6f12966f79c0b5e43f8e4b60006d8`). Running that image from outside the checkout verified UID 10001, packaged migrations/schema, native PostgreSQL/Kafka bindings, all entrypoints and dependency consistency.
+
+The documented local `docker compose --profile app up -d --build --wait` was actually run: migration exited successfully and API, relay, worker, PostgreSQL and Kafka were healthy. API `/health/ready` returned `{"status":"ready"}` with no inference service running. No review/model generation was submitted in this smoke; the real backend chain is covered by the functional double tests above. The profile was then stopped with `docker compose --profile app down`, preserving only this project's development/test volumes. No original cluster resources were touched.
