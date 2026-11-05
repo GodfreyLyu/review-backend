@@ -1,0 +1,8 @@
+thrift==0.25.0
+fastapi>=0.115,<1
+uvicorn>=0.35,<1
+pydantic-settings>=2.10,<3
+psycopg[binary]==3.2.13
+confluent-kafka==2.12.0
+argon2-cffi>=25.1,<26
+prometheus-client>=0.22,<1
